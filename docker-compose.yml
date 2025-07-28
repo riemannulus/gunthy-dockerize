@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  gunthy:
+    image: riemannulus/gunthy:latest  # Pull image from Docker Hub
+    # build:  # Uncomment below for local build
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: gunthy
+    restart: unless-stopped
+    
+    # Port mapping
+    ports:
+      - "3000:3000"   # GUI access (browser: http://localhost:3000)
+      - "3001:3001"   # GUI default port
+      - "5001:5001"   # WebSocket port
+    
+    # Data volume mount (configuration files are stored here)
+    volumes:
+      - gunthy_data:/data
+      - ./logs:/data/logs  # If you want to check logs directly from host
+    
+    # Environment variables (if needed)
+    environment:
+      - TZ=Asia/Seoul  # Timezone setting
+      # - USE_PM2=true  # Uncomment to run with PM2
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+volumes:
+  gunthy_data:
+    driver: local 
