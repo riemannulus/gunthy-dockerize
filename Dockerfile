@@ -51,15 +51,28 @@ RUN echo "Downloading latest Gunbot version..." && \
     rm /tmp/gunthy_linux.zip && \
     echo "Latest Gunbot version installed successfully"
 
-# Setup data directory structure
-RUN mkdir -p ${GUNTHY_DATA}/config ${GUNTHY_DATA}/json ${GUNTHY_DATA}/logs
-
-# Create symlinks for persistent data files
-RUN if [ -f ${GUNTHY_HOME}/config.js ]; then \
-        mv ${GUNTHY_HOME}/config.js ${GUNTHY_DATA}/config/ && \
-        ln -s ${GUNTHY_DATA}/config/config.js ${GUNTHY_HOME}/config.js; \
+# Verify that config.js exists - fail build if not found
+RUN if [ ! -f ${GUNTHY_HOME}/config.js ]; then \
+        echo "ERROR: config.js not found in Gunthy installation!" && \
+        echo "Available files:" && \
+        ls -la ${GUNTHY_HOME}/ && \
+        exit 1; \
     fi && \
-    if [ -f ${GUNTHY_HOME}/autoconfig.json ]; then \
+    echo "config.js found and verified"
+
+# Setup persistent data directory structure
+RUN mkdir -p ${GUNTHY_DATA}/config \
+             ${GUNTHY_DATA}/json \
+             ${GUNTHY_DATA}/logs \
+             ${GUNTHY_DATA}/backtesting \
+             ${GUNTHY_DATA}/backups \
+             ${GUNTHY_DATA}/customStrategies \
+             ${GUNTHY_DATA}/gunbot_logs \
+             ${GUNTHY_DATA}/database
+
+# Create symlinks for persistent config files  
+# Note: Don't move config.js during build - keep it for runtime initialization
+RUN if [ -f ${GUNTHY_HOME}/autoconfig.json ]; then \
         mv ${GUNTHY_HOME}/autoconfig.json ${GUNTHY_DATA}/config/ && \
         ln -s ${GUNTHY_DATA}/config/autoconfig.json ${GUNTHY_HOME}/autoconfig.json; \
     fi && \
@@ -72,16 +85,37 @@ RUN if [ -f ${GUNTHY_HOME}/config.js ]; then \
         ln -s ${GUNTHY_DATA}/config/server.cert ${GUNTHY_HOME}/server.cert; \
     fi
 
-# Set up JSON output directory symlink
-RUN ln -sf ${GUNTHY_DATA}/json ${GUNTHY_HOME}/json
+# Create symlinks for persistent directories
+RUN ln -sf ${GUNTHY_DATA}/json ${GUNTHY_HOME}/json && \
+    ln -sf ${GUNTHY_DATA}/logs ${GUNTHY_HOME}/logs && \
+    ln -sf ${GUNTHY_DATA}/backtesting ${GUNTHY_HOME}/backtesting && \
+    ln -sf ${GUNTHY_DATA}/backups ${GUNTHY_HOME}/backups && \
+    ln -sf ${GUNTHY_DATA}/customStrategies ${GUNTHY_HOME}/customStrategies && \
+    ln -sf ${GUNTHY_DATA}/gunbot_logs ${GUNTHY_HOME}/gunbot_logs
 
 # Change ownership
 RUN chown -R gunthy:gunthy ${GUNTHY_HOME} ${GUNTHY_DATA}
+
+# Install gosu for proper user switching
+RUN ARCH=$(dpkg --print-architecture) && \
+    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.17/gosu-${ARCH}" && \
+    chmod +x /usr/local/bin/gosu && \
+    gosu nobody true
 
 # Create startup script
 COPY <<EOF /docker-entrypoint.sh
 #!/bin/bash
 set -e
+
+# Ensure all required directories exist
+mkdir -p ${GUNTHY_DATA}/config
+mkdir -p ${GUNTHY_DATA}/json
+mkdir -p ${GUNTHY_DATA}/logs
+mkdir -p ${GUNTHY_DATA}/backtesting
+mkdir -p ${GUNTHY_DATA}/backups
+mkdir -p ${GUNTHY_DATA}/customStrategies
+mkdir -p ${GUNTHY_DATA}/gunbot_logs
+mkdir -p ${GUNTHY_DATA}/database
 
 # Ensure data directory permissions
 chown -R gunthy:gunthy ${GUNTHY_DATA}
@@ -89,7 +123,13 @@ chown -R gunthy:gunthy ${GUNTHY_DATA}
 # Initialize config files if they don't exist
 if [ ! -f ${GUNTHY_DATA}/config/config.js ]; then
     echo "Initializing default config.js..."
-    cp ${GUNTHY_HOME}/config-js-example.txt ${GUNTHY_DATA}/config/config.js 2>/dev/null || true
+    if [ -f ${GUNTHY_HOME}/config.js ]; then
+        cp ${GUNTHY_HOME}/config.js ${GUNTHY_DATA}/config/config.js
+        echo "config.js copied from installation"
+    else
+        echo "ERROR: config.js not found in ${GUNTHY_HOME}!"
+        exit 1
+    fi
 fi
 
 if [ ! -f ${GUNTHY_DATA}/config/autoconfig.json ]; then
@@ -100,7 +140,7 @@ if [ ! -f ${GUNTHY_DATA}/config/UTAconfig.json ]; then
     echo "{}" > ${GUNTHY_DATA}/config/UTAconfig.json
 fi
 
-# Ensure symlinks exist
+# Ensure symlinks exist for config files
 [ ! -L ${GUNTHY_HOME}/config.js ] && [ -f ${GUNTHY_DATA}/config/config.js ] && \
     ln -sf ${GUNTHY_DATA}/config/config.js ${GUNTHY_HOME}/config.js
 
@@ -113,9 +153,23 @@ fi
 [ ! -L ${GUNTHY_HOME}/server.cert ] && [ -f ${GUNTHY_DATA}/config/server.cert ] && \
     ln -sf ${GUNTHY_DATA}/config/server.cert ${GUNTHY_HOME}/server.cert
 
-# Ensure JSON directory exists
-mkdir -p ${GUNTHY_DATA}/json
+# Ensure directory symlinks exist
 [ ! -L ${GUNTHY_HOME}/json ] && ln -sf ${GUNTHY_DATA}/json ${GUNTHY_HOME}/json
+[ ! -L ${GUNTHY_HOME}/logs ] && ln -sf ${GUNTHY_DATA}/logs ${GUNTHY_HOME}/logs
+[ ! -L ${GUNTHY_HOME}/backtesting ] && ln -sf ${GUNTHY_DATA}/backtesting ${GUNTHY_HOME}/backtesting
+[ ! -L ${GUNTHY_HOME}/backups ] && ln -sf ${GUNTHY_DATA}/backups ${GUNTHY_HOME}/backups
+[ ! -L ${GUNTHY_HOME}/customStrategies ] && ln -sf ${GUNTHY_DATA}/customStrategies ${GUNTHY_HOME}/customStrategies
+[ ! -L ${GUNTHY_HOME}/gunbot_logs ] && ln -sf ${GUNTHY_DATA}/gunbot_logs ${GUNTHY_HOME}/gunbot_logs
+
+# Create symlinks for SQLite database files and other persistent files
+for file in gunbotgui.db new_gui.sqlite state.db state.db-shm state.db-wal bitrage.sqlite bitrage_total_profits.sqlite conversion.json gunbot.pid; do
+    if [ -f ${GUNTHY_HOME}/\$file ] && [ ! -L ${GUNTHY_HOME}/\$file ]; then
+        mv ${GUNTHY_HOME}/\$file ${GUNTHY_DATA}/database/
+        ln -sf ${GUNTHY_DATA}/database/\$file ${GUNTHY_HOME}/\$file
+    elif [ -f ${GUNTHY_DATA}/database/\$file ] && [ ! -L ${GUNTHY_HOME}/\$file ]; then
+        ln -sf ${GUNTHY_DATA}/database/\$file ${GUNTHY_HOME}/\$file
+    fi
+done
 
 # Change to working directory
 cd ${GUNTHY_HOME}
@@ -133,12 +187,6 @@ fi
 EOF
 
 RUN chmod +x /docker-entrypoint.sh
-
-# Install gosu for proper user switching
-RUN ARCH=$(dpkg --print-architecture) && \
-    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.17/gosu-${ARCH}" && \
-    chmod +x /usr/local/bin/gosu && \
-    gosu nobody true
 
 # Expose ports
 EXPOSE 3000 3001 5001

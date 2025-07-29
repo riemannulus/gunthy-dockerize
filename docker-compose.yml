@@ -15,26 +15,20 @@ services:
       - "3001:3001"   # GUI default port
       - "5001:5001"   # WebSocket port
     
-    # Data volume mount (configuration files are stored here)
+    # Data volume mount (all persistent data stored here)
     volumes:
-      - gunthy_data:/data
-      - ./logs:/data/logs  # If you want to check logs directly from host
+      - ./gunthy_data:/data
+      # Optional: Mount specific subdirectories to host for easy access
+      # - ./host_logs:/data/logs
+      # - ./host_config:/data/config
+      # - ./host_backups:/data/backups
     
-    # Environment variables (if needed)
+    # Environment variables
     environment:
-      - TZ=Asia/Seoul  # Timezone setting
-      # - USE_PM2=true  # Uncomment to run with PM2
+      - TZ=Asia/Seoul          # Timezone setting
+      - USE_PM2=false          # Set to 'true' to run with PM2 process manager
+      # - GUNTHY_HOME=/opt/gunthy  # Already set in Dockerfile
+      # - GUNTHY_DATA=/data        # Already set in Dockerfile
     
-    # Resource limits (optional)
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-        reservations:
-          memory: 512M
-          cpus: '0.5'
-
-volumes:
-  gunthy_data:
-    driver: local 
+    # Network mode (optional)
+    # network_mode: "host"     # Uncomment if you need host network access
