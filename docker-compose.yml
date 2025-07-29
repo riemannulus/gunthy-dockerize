@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   gunthy:
-    image: riemannulus/gunthy:latest  # Pull image from Docker Hub
+    build:
+      context: .
+      dockerfile: Dockerfile
     # build:  # Uncomment below for local build
     #   context: .
     #   dockerfile: Dockerfile

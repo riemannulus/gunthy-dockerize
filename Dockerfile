@@ -162,13 +162,14 @@ fi
 [ ! -L ${GUNTHY_HOME}/gunbot_logs ] && ln -sf ${GUNTHY_DATA}/gunbot_logs ${GUNTHY_HOME}/gunbot_logs
 
 # Create symlinks for SQLite database files and other persistent files
+# Pre-create symlinks so files are created in the persistent location
 for file in gunbotgui.db new_gui.sqlite state.db state.db-shm state.db-wal bitrage.sqlite bitrage_total_profits.sqlite conversion.json gunbot.pid; do
+    # If file exists in GUNTHY_HOME and is not a symlink, move it to persistent storage
     if [ -f ${GUNTHY_HOME}/\$file ] && [ ! -L ${GUNTHY_HOME}/\$file ]; then
         mv ${GUNTHY_HOME}/\$file ${GUNTHY_DATA}/database/
-        ln -sf ${GUNTHY_DATA}/database/\$file ${GUNTHY_HOME}/\$file
-    elif [ -f ${GUNTHY_DATA}/database/\$file ] && [ ! -L ${GUNTHY_HOME}/\$file ]; then
-        ln -sf ${GUNTHY_DATA}/database/\$file ${GUNTHY_HOME}/\$file
     fi
+    # Always create symlink (this ensures new files are created in persistent storage)
+    ln -sf ${GUNTHY_DATA}/database/\$file ${GUNTHY_HOME}/\$file
 done
 
 # Change to working directory
